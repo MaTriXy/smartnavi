@@ -1,16 +1,17 @@
 package com.ilm.sandwich;
 
+
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.support.v7.app.AppCompatActivity;
 import android.view.KeyEvent;
 import android.view.MenuItem;
 import android.widget.TextView;
 
-import com.google.android.gms.analytics.HitBuilders;
-import com.google.android.gms.analytics.Tracker;
-import com.ilm.sandwich.tools.AnalyticsApplication;
+import androidx.appcompat.app.AppCompatActivity;
+
+import com.google.firebase.analytics.FirebaseAnalytics;
+
 
 /**
  * @author Christian Henke
@@ -18,7 +19,7 @@ import com.ilm.sandwich.tools.AnalyticsApplication;
  */
 public class Info extends AppCompatActivity {
 
-    private Tracker mTracker;
+    private FirebaseAnalytics mFirebaseAnalytics;
 
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -26,12 +27,11 @@ public class Info extends AppCompatActivity {
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         getSupportActionBar().setTitle(getResources().getString(R.string.tx_65));
 
-        // Obtain the shared Tracker instance.
-        AnalyticsApplication application = (AnalyticsApplication) getApplication();
-        mTracker = application.getDefaultTracker();
+        // Obtain the FirebaseAnalytics instance.
+        mFirebaseAnalytics = FirebaseAnalytics.getInstance(this);
 
-        TextView versionNameText = (TextView) findViewById(R.id.versionName);
-        PackageInfo pInfo = null;
+        TextView versionNameText = findViewById(R.id.versionName);
+        PackageInfo pInfo;
         try {
             pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
             String versionName = pInfo.versionName;
@@ -39,13 +39,7 @@ public class Info extends AppCompatActivity {
         } catch (PackageManager.NameNotFoundException e) {
             e.printStackTrace();
         }
-    }
 
-    @Override
-    protected void onResume() {
-        mTracker.setScreenName("Info");
-        mTracker.send(new HitBuilders.ScreenViewBuilder().build());
-        super.onResume();
     }
 
     @Override

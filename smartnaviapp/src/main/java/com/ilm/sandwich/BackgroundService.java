@@ -2,8 +2,6 @@ package com.ilm.sandwich;
 
 import android.annotation.SuppressLint;
 import android.app.Dialog;
-import android.app.Notification;
-import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
@@ -12,8 +10,6 @@ import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
-import android.support.v4.app.NotificationCompat;
-import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.MenuItem;
 import android.view.View;
@@ -21,11 +17,14 @@ import android.view.View.OnClickListener;
 import android.widget.Button;
 import android.widget.Toast;
 
-import com.google.android.gms.analytics.HitBuilders;
-import com.google.android.gms.analytics.Tracker;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
+
+import com.google.firebase.analytics.FirebaseAnalytics;
 import com.ilm.sandwich.sensors.Core;
-import com.ilm.sandwich.tools.AnalyticsApplication;
 import com.ilm.sandwich.tools.Config;
+import com.ilm.sandwich.tools.ForegroundService;
 
 /**
  * @author Christian Henke
@@ -38,14 +37,13 @@ public class BackgroundService extends AppCompatActivity {
     public static double sGeoLon;
     public static int steps = 0;
     static Location loc;
+    private FirebaseAnalytics mFirebaseAnalytics;
     static String mocLocationProvider;
     static LocationManager geoLocationManager;
-    Notification notification;
     Button serviceButton;
-    NotificationManager notificationManager;
+    NotificationManagerCompat notificationManager;
     private boolean shouldStart = true;
 
-    private Tracker mTracker;
 
     public static void pauseFakeProvider() {
         if (BuildConfig.debug)
@@ -76,7 +74,6 @@ public class BackgroundService extends AppCompatActivity {
         // Positionen in Variablen schreiben, damit Karte die aufnehmen kann wenn es wieder aufgerufen wird
         sGeoLat = Core.startLat;
         sGeoLon = Core.startLon;
-
         steps = Core.stepCounter;
         //GPS
         loc = new Location(mocLocationProvider);
@@ -90,11 +87,7 @@ public class BackgroundService extends AppCompatActivity {
         loc.setTime(System.currentTimeMillis());
         try {
             try {
-                if (Build.VERSION.SDK_INT >= 17) {
-                    loc.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
-                } else {
-                    loc.setElapsedRealtimeNanos(System.currentTimeMillis() * 1000);
-                }
+                loc.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
             } catch (NoSuchMethodError e) {
                 e.printStackTrace();
             }
@@ -112,12 +105,6 @@ public class BackgroundService extends AppCompatActivity {
         }
     }
 
-    @Override
-    protected void onResume() {
-        mTracker.setScreenName("BackgroundService");
-        mTracker.send(new HitBuilders.ScreenViewBuilder().build());
-        super.onResume();
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -128,9 +115,8 @@ public class BackgroundService extends AppCompatActivity {
         getSupportActionBar().setTitle(getResources().getString(R.string.tx_64));
         geoLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
 
-        // Obtain the shared Tracker instance.
-        AnalyticsApplication application = (AnalyticsApplication) getApplication();
-        mTracker = application.getDefaultTracker();
+        // Obtain the FirebaseAnalytics instance.
+        mFirebaseAnalytics = FirebaseAnalytics.getInstance(this);
 
         //restart Sensors
         try {
@@ -142,31 +128,35 @@ public class BackgroundService extends AppCompatActivity {
             try {
                 geoLocationManager.setTestProviderEnabled(mocLocationProvider, false);
             } catch (Exception e2) {
-                // e.printStackTrace();
+                if (BuildConfig.DEBUG)
+                    e.printStackTrace();
             }
             try {
                 geoLocationManager.clearTestProviderEnabled(mocLocationProvider);
             } catch (Exception e3) {
-                // e.printStackTrace();
+                if (BuildConfig.DEBUG)
+                    e.printStackTrace();
             }
             try {
                 geoLocationManager.removeTestProvider(mocLocationProvider);
             } catch (Exception e4) {
-                // e.printStackTrace();
+                if (BuildConfig.DEBUG)
+                    e.printStackTrace();
             }
             try {
-                notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                notificationManager = NotificationManagerCompat.from(this);
                 notificationManager.cancelAll();
             } catch (Exception e5) {
-                // e.printStackTrace();
+                if (BuildConfig.DEBUG)
+                    e.printStackTrace();
             }
             finish();
         }
-        serviceButton = (Button) findViewById(R.id.button1);
+        serviceButton = findViewById(R.id.button1);
         serviceButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (shouldStart == true) {
+                if (shouldStart) {
                     starte();
                 } else {
                     stop();
@@ -176,53 +166,64 @@ public class BackgroundService extends AppCompatActivity {
             }
         });
 
-        if (shouldStart == true) {
+        if (shouldStart) {
             serviceButton.setText(getApplicationContext().getResources().getString(R.string.tx_74));
         } else {
             serviceButton.setText(getApplicationContext().getResources().getString(R.string.tx_69));
         }
     }
 
-    @SuppressWarnings("deprecation")
-    public void starte() {
 
-        mocLocationProvider = LocationManager.GPS_PROVIDER;
+    public void starte() {
         try {
+            mocLocationProvider = LocationManager.GPS_PROVIDER;
+
             geoLocationManager.addTestProvider(mocLocationProvider, false, false, false, false, true, true, true, 1, 5);
             geoLocationManager.setTestProviderEnabled(mocLocationProvider, true);
             geoLocationManager.setTestProviderStatus(mocLocationProvider, 2, null, System.currentTimeMillis());
 
-            notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-
-
-            Intent intent = new Intent(this, BackgroundService.class);
-            PendingIntent activity = PendingIntent.getActivity(this, 0, intent, 0);
-            NotificationCompat.Builder builder = new NotificationCompat.Builder(
-                    this);
-            notification = builder.setContentIntent(activity)
-                    .setContentTitle(getApplicationContext().getResources().getString(R.string.tx_72))
-                    .setContentText(getApplicationContext().getResources().getString(R.string.tx_73))
-                    .setSmallIcon(R.drawable.ic_stat_maps_directions_walk)
-                    .setOngoing(true)
-                    .build();
-
-            notificationManager.notify(0, notification);
             serviceButton.setText(getApplicationContext().getResources().getString(R.string.tx_69));
 
             shouldStart = false;
             serviceButton.setText(getApplicationContext().getResources().getString(R.string.tx_69));
             Config.backgroundServiceActive = true;
 
+            mFirebaseAnalytics.logEvent("BackgroundService_Start_Success", null);
 
-            //tell the Maps to restart the sensor listeners after 10s because
-            //other foreign third party apps may stop them
-            GoogleMap.listHandler.sendEmptyMessage(9);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Intent intent = new Intent(this, ForegroundService.class);
+                intent.setAction(ForegroundService.ACTION_START_FOREGROUND_SERVICE);
+                this.startForegroundService(intent);
+            } else {
+                Intent intent = new Intent(this, BackgroundService.class);
+                PendingIntent activity = PendingIntent.getActivity(this, 0, intent, 0);
 
+                notificationManager = NotificationManagerCompat.from(this);
+                NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this, "21986938")
+                        .setContentIntent(activity)
+                        .setContentTitle(getApplicationContext().getResources().getString(R.string.tx_72))
+                        .setContentText(getApplicationContext().getResources().getString(R.string.tx_73))
+                        .setSmallIcon(R.drawable.ic_stat_maps_directions_walk)
+                        .setPriority(NotificationCompat.PRIORITY_MAX)
+                        .setOngoing(true)
+                        .setAutoCancel(false);
 
-            mTracker.send(new HitBuilders.EventBuilder()
-                    .setCategory("Action")
-                    .setAction("Backround_service_start_success")
-                    .build());
+                /* Create the NotificationChannel, but only on API 26+ because
+                // the NotificationChannel class is new and not in the support library
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    CharSequence name = "SmartNavi";
+                    String description = "SmartNavi Background Service Notifications";
+                    int importance = NotificationManager.IMPORTANCE_DEFAULT;
+                    NotificationChannel channel = new NotificationChannel("21986938", name, importance);
+                    channel.setDescription(description);
+                    // Register the channel with the system; you can't change the importance
+                    // or other notification behaviors after this
+                    NotificationManager notificationManager = getSystemService(NotificationManager.class);
+                    notificationManager.createNotificationChannel(channel);
+                }
+                */
+                notificationManager.notify(0, notificationBuilder.build());
+            }
 
             Intent startMain = new Intent(Intent.ACTION_MAIN);
             startMain.addCategory(Intent.CATEGORY_HOME);
@@ -230,24 +231,21 @@ public class BackgroundService extends AppCompatActivity {
             startActivity(startMain);
 
         } catch (SecurityException sece) {
-            mTracker.send(new HitBuilders.EventBuilder()
-                    .setCategory("Action")
-                    .setAction("Backround_service_start_error")
-                    .build());
+            mFirebaseAnalytics.logEvent("BackgroundService_Start_Error", null);
             final Dialog dialog1 = new Dialog(BackgroundService.this);
             dialog1.setContentView(R.layout.dialog1);
             dialog1.setTitle(getApplicationContext().getResources().getString(R.string.tx_44));
             dialog1.setCancelable(true);
             dialog1.show();
 
-            Button cancel2 = (Button) dialog1.findViewById(R.id.dialogCancelMock);
+            Button cancel2 = dialog1.findViewById(R.id.dialogCancelMock);
             cancel2.setOnClickListener(new OnClickListener() {
                 public void onClick(View arg0) {
                     dialog1.dismiss();
                 }
             });
 
-            Button settings2 = (Button) dialog1.findViewById(R.id.dialogSettingsMock);
+            Button settings2 = dialog1.findViewById(R.id.dialogSettingsMock);
             settings2.setOnClickListener(new OnClickListener() {
                 public void onClick(View arg0) {
                     try {
@@ -270,17 +268,19 @@ public class BackgroundService extends AppCompatActivity {
             });
             serviceButton.setText(getApplicationContext().getResources().getString(R.string.tx_74));
         } catch (IllegalArgumentException e) {
-            // e.printStackTrace();
+            if (BuildConfig.DEBUG)
+                e.printStackTrace();
         }
-
     }
 
     public void stop() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent serviceIntent = new Intent(this, ForegroundService.class);
+            stopService(serviceIntent);
+        }
         //stop the Handlers who are responsible for restarting the sensor-listeners
-        mTracker.send(new HitBuilders.EventBuilder()
-                .setCategory("Action")
-                .setAction("Backround_service_stopped")
-                .build());
+        mFirebaseAnalytics.logEvent("BackgroundService_Stop", null);
+        //Stop sensors from beeing reactivated, 9 is for reactivating every 5 sec
         GoogleMap.listHandler.removeMessages(10);
 
         Config.backgroundServiceActive = false;
@@ -288,20 +288,28 @@ public class BackgroundService extends AppCompatActivity {
         try {
             geoLocationManager.setTestProviderEnabled(mocLocationProvider, false);
         } catch (Exception e) {
-            // e.printStackTrace();
+            if (BuildConfig.DEBUG)
+                e.printStackTrace();
         }
         try {
             geoLocationManager.clearTestProviderEnabled(mocLocationProvider);
         } catch (Exception e) {
-            // e.printStackTrace();
+            if (BuildConfig.DEBUG)
+                e.printStackTrace();
         }
         try {
             geoLocationManager.removeTestProvider(mocLocationProvider);
         } catch (Exception e) {
-            // e.printStackTrace();
+            if (BuildConfig.DEBUG)
+                e.printStackTrace();
+        }
+        try {
+            notificationManager.cancelAll();
+        } catch (Exception e) {
+            if (BuildConfig.DEBUG)
+                e.printStackTrace();
         }
 
-        notificationManager.cancelAll();
         Toast.makeText(this, getApplicationContext().getResources().getString(R.string.tx_70), Toast.LENGTH_LONG).show();
         finish();
     }
@@ -309,7 +317,7 @@ public class BackgroundService extends AppCompatActivity {
     @Override
     public void onBackPressed() {
 
-        if (shouldStart == false) {
+        if (!shouldStart) {
             stop();
         }
         super.onBackPressed();
@@ -317,24 +325,22 @@ public class BackgroundService extends AppCompatActivity {
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        switch (item.getItemId()) {
-            case android.R.id.home:
-                if (shouldStart == false) {
-                    try {
-                        geoLocationManager.setTestProviderEnabled(mocLocationProvider, false);
-                        geoLocationManager.removeTestProvider(mocLocationProvider);
-                        geoLocationManager.clearTestProviderEnabled(mocLocationProvider);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                    notificationManager.cancelAll();
-                    Toast.makeText(this, getApplicationContext().getResources().getString(R.string.tx_70), Toast.LENGTH_LONG).show();
+        if (item.getItemId() == android.R.id.home) {
+            if (!shouldStart) {
+                try {
+                    geoLocationManager.setTestProviderEnabled(mocLocationProvider, false);
+                    geoLocationManager.removeTestProvider(mocLocationProvider);
+                    geoLocationManager.clearTestProviderEnabled(mocLocationProvider);
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
-                finish();
-                return (true);
-            default:
-                return super.onOptionsItemSelected(item);
+                notificationManager.cancelAll();
+                Toast.makeText(this, getApplicationContext().getResources().getString(R.string.tx_70), Toast.LENGTH_LONG).show();
+            }
+            finish();
+            return (true);
         }
+        return super.onOptionsItemSelected(item);
     }
 
 }

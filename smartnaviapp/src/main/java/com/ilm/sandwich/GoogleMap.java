@@ -3,36 +3,21 @@ package com.ilm.sandwich;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Dialog;
-import android.app.SearchManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
-import android.database.MatrixCursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
-import android.location.Address;
-import android.location.Geocoder;
-import android.net.ConnectivityManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
 import android.os.Vibrator;
 import android.speech.tts.TextToSpeech;
-import android.support.annotation.NonNull;
-import android.support.design.widget.FloatingActionButton;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.app.FragmentManager;
-import android.support.v4.app.FragmentTransaction;
-import android.support.v4.content.ContextCompat;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.SearchView;
-import android.support.v7.widget.Toolbar;
 import android.text.Html;
 import android.text.Spanned;
 import android.util.Log;
@@ -42,7 +27,6 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.WindowManager;
-import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
 import android.widget.Button;
@@ -51,11 +35,18 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.google.android.gms.analytics.HitBuilders;
-import com.google.android.gms.analytics.Tracker;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import androidx.fragment.app.FragmentManager;
+import androidx.fragment.app.FragmentTransaction;
+
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.Status;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap.OnMapClickListener;
 import com.google.android.gms.maps.GoogleMap.OnMapLongClickListener;
@@ -69,22 +60,32 @@ import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.Polyline;
 import com.google.android.gms.maps.model.PolylineOptions;
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.Task;
+import com.google.android.libraries.places.api.Places;
+import com.google.android.libraries.places.api.model.Place;
+import com.google.android.libraries.places.api.model.RectangularBounds;
+import com.google.android.libraries.places.widget.Autocomplete;
+import com.google.android.libraries.places.widget.AutocompleteActivity;
+import com.google.android.libraries.places.widget.model.AutocompleteActivityMode;
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.google.firebase.analytics.FirebaseAnalytics;
+import com.google.firebase.iid.FirebaseInstanceId;
+import com.google.firebase.iid.InstanceIdResult;
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig;
+import com.google.firebase.remoteconfig.FirebaseRemoteConfigSettings;
 import com.ilm.sandwich.fragments.RatingFragment;
 import com.ilm.sandwich.fragments.TutorialFragment;
 import com.ilm.sandwich.sensors.Core;
-import com.ilm.sandwich.tools.AnalyticsApplication;
 import com.ilm.sandwich.tools.Config;
 import com.ilm.sandwich.tools.HttpRequests;
 import com.ilm.sandwich.tools.Locationer;
-import com.ilm.sandwich.tools.PlacesAutoComplete;
-import com.ilm.sandwich.tools.PlacesTextSearch;
-import com.ilm.sandwich.tools.SuggestionsAdapter;
 
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -92,7 +93,7 @@ import java.util.Locale;
  * MapActivitiy for Google Maps
  *
  * @author Christian Henke
- *         www.smartnavi-app.com
+ * www.smartnavi-app.com
  */
 public class GoogleMap extends AppCompatActivity implements Locationer.onLocationUpdateListener,
         GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, OnMapReadyCallback, TutorialFragment.onTutorialFinishedListener, Core.onStepUpdateListener, RatingFragment.onRatingFinishedListener {
@@ -107,18 +108,11 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
     public static boolean backgroundServiceShallBeOnAgain = false;
     public static String uid;
     public static boolean userHasSetByTouch = false;
-    public static SearchView searchView;
     public static Handler listHandler;
-    public static SuggestionsAdapter mSuggestionsAdapter;
-    public static boolean suggestionsInProgress = false;
-    public static MatrixCursor cursor = new MatrixCursor(Config.COLUMNS);
-    public static Handler changeSuggestionAdapter;
     static boolean uTaskIsOn;
     static LatLng longpressLocation;
-    static ListView list;
     private static int stepCounterOld = 1;
     private static int now = 0;
-    private static int geoCodeTry = 0;
     private static LatLng startLatLng;
     private static LatLng destLatLng;
     private static float oldZoomLevel;
@@ -136,7 +130,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
     public boolean waitedAtStart = false;
     public int counterRouteComplexity = 0;
     public boolean speechOutput;
-    public Context sbContext;
+    ListView list;
     Menu mainMenu;
     String language;
     TextToSpeech mTts;
@@ -145,7 +139,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
     int segmentCounter;
     TutorialFragment tutorialFragment;
     RatingFragment ratingFragment;
-    private Tracker mTracker;
+    private FirebaseAnalytics mFirebaseAnalytics;
     private com.google.android.gms.maps.GoogleMap map;
     private String[] html_instructions = new String[31];
     private String[] polylineArray = new String[31];
@@ -154,7 +148,6 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
     private boolean finishedTalking = false;
     private boolean listVisible = false;
     private Polyline[] completeRoute = new Polyline[31];
-    private Toolbar toolbar;
     private FloatingActionButton fab;
 
     public static double computeDistanz(double lat, double lon) {
@@ -171,8 +164,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         try {
             actualMarker[0].setPosition(startLatLng);
         } catch (Exception e) {
-            if (BuildConfig.debug)
-                e.printStackTrace();
+            e.printStackTrace();
         }
         if (follow) {
             if (Core.lastErrorGPS < 100) {
@@ -196,26 +188,53 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_googlemap);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        toolbar = (Toolbar) findViewById(R.id.toolbar_googlemap); // Attaching the layout to the toolbar object
+        Toolbar toolbar = findViewById(R.id.toolbar_googlemap); // Attaching the layout to the toolbar object
         setSupportActionBar(toolbar);                   // Setting toolbar as the ActionBar with setSupportActionBar() call
 
-        // Obtain the shared Tracker instance.
-        AnalyticsApplication application = (AnalyticsApplication) getApplication();
-        mTracker = application.getDefaultTracker();
+        // Obtain the FirebaseAnalytics instance.
+        mFirebaseAnalytics = FirebaseAnalytics.getInstance(this);
+        FirebaseRemoteConfig mFirebaseRemoteConfig = FirebaseRemoteConfig.getInstance();
+        if (BuildConfig.DEBUG) {
+            FirebaseInstanceId.getInstance().getInstanceId()
+                    .addOnCompleteListener(new OnCompleteListener<InstanceIdResult>() {
+                        @Override
+                        public void onComplete(@NonNull Task<InstanceIdResult> task) {
+                            Log.i("IID_TOKEN", task.getResult().getToken());
+                        }
+                    });
+        } else {
+            mFirebaseRemoteConfig.fetch(1);
+            mFirebaseRemoteConfig.activate();
+        }
+        FirebaseRemoteConfigSettings configSettings = new FirebaseRemoteConfigSettings.Builder()
+                .setDeveloperModeEnabled(BuildConfig.DEBUG)
+                .setMinimumFetchIntervalInSeconds(1)
+                .build();
+        mFirebaseRemoteConfig.setConfigSettings(configSettings);
+        mFirebaseRemoteConfig.fetchAndActivate().addOnCompleteListener(this, new OnCompleteListener<Boolean>() {
+            @Override
+            public void onComplete(@NonNull Task<Boolean> task) {
+                if (task.isSuccessful()) {
+                    boolean updated = task.getResult();
+                    Log.d("Firebase", "Config params updated: " + updated);
+                } else {
+                    Log.d("Firebase", "Fetch failed");
+                }
+            }
+        });
 
-        fab = (FloatingActionButton) findViewById(R.id.fab);
+        fab = findViewById(R.id.fab);
         if (fab != null) {
             fab.setOnClickListener(new OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     // longPressMenu will become invisible
                     try {
-                        list = (ListView) findViewById(R.id.liste);
+                        list = findViewById(R.id.liste);
                         if (list != null && list.getVisibility() == View.VISIBLE)
                             list.setVisibility(View.INVISIBLE);
                     } catch (Exception e) {
-                        if (BuildConfig.debug)
-                            e.printStackTrace();
+                        e.printStackTrace();
                     }
                     setFollowOn();
                 }
@@ -239,17 +258,11 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         // If request is cancelled, the result arrays are empty.
         if (grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            mTracker.send(new HitBuilders.EventBuilder()
-                    .setCategory("Action")
-                    .setAction("Granted_Google_Location")
-                    .build());
+            mFirebaseAnalytics.logEvent("Granted_Google_Location", null);
             proceedOnCreate();
         } else {
             Toast.makeText(this, getApplicationContext().getResources().getString(R.string.tx_100), Toast.LENGTH_LONG).show();
-            mTracker.send(new HitBuilders.EventBuilder()
-                    .setCategory("Action")
-                    .setAction("Denied_Google_Location")
-                    .build());
+            mFirebaseAnalytics.logEvent("Denied_Google_Location", null);
             finish();
         }
     }
@@ -287,10 +300,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         map.setOnMapLongClickListener(new OnMapLongClickListener() {
             @Override
             public void onMapLongClick(LatLng arg0) {
-                mTracker.send(new HitBuilders.EventBuilder()
-                        .setCategory("Action")
-                        .setAction("Longpress_GoogleMap")
-                        .build());
+                mFirebaseAnalytics.logEvent("Longpress_Map", null);
                 longpressLocation = arg0;
                 if (longPressMarker != null) {
                     if (longPressMarker.isVisible()) {
@@ -331,7 +341,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
             if (viewLine != null) {
                 viewLine.setVisibility(View.VISIBLE);
             }
-            TextView mapText = (TextView) findViewById(R.id.mapText);
+            TextView mapText = findViewById(R.id.mapText);
             if (mapText != null) {
                 mapText.setVisibility(View.VISIBLE);
             }
@@ -340,10 +350,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
             }
         }
 
-        // if offline, Toast Message will appear automatically
-        isOnline();
-
-        TextView mapText = (TextView) findViewById(R.id.mapText);
+        TextView mapText = findViewById(R.id.mapText);
         if (mapText != null) {
             mapText.setVisibility(View.INVISIBLE);
             mapText.setSingleLine(false);
@@ -377,17 +384,23 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         String stepLengthString = settings.getString("step_length", null);
         if (stepLengthString != null) {
             try {
-                stepLengthString = stepLengthString.replace(",", ".");
-                Float savedBodyHeight = (Float.parseFloat(stepLengthString));
-                if (savedBodyHeight < 241 && savedBodyHeight > 119) {
+
+                if (stepLengthString.contains("'")) {
+                    String[] feetInchString = stepLengthString.split("'");
+                    String feetString = feetInchString[0];
+                    String inchString = feetInchString[1];
+                    float feet = Float.valueOf(feetString);
+                    float inch = Float.valueOf(inchString);
+                    float totalInch = 12 * feet + inch;
+                    Core.stepLength = (float) (totalInch * 2.54 / 222);
+                } else {
+                    stepLengthString = stepLengthString.replace(",", ".");
+                    Float savedBodyHeight = (Float.parseFloat(stepLengthString));
                     Core.stepLength = savedBodyHeight / 222;
-                } else if (savedBodyHeight < 95 && savedBodyHeight > 45) {
-                    Core.stepLength = (float) (savedBodyHeight * 2.54 / 222);
                 }
+                if (BuildConfig.DEBUG) Log.i("Step length", "Step length = " + Core.stepLength);
             } catch (NumberFormatException e) {
-                if (BuildConfig.debug) {
-                    e.printStackTrace();
-                }
+                e.printStackTrace();
             }
         } else {
             map.getUiSettings().setAllGesturesEnabled(false);
@@ -402,7 +415,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         mTts.setLanguage(Locale.getDefault());
 
         // onLongPress Auswahl-Liste
-        list = (ListView) findViewById(R.id.liste);
+        list = findViewById(R.id.liste);
         if (list != null) {
             list.setVisibility(View.INVISIBLE);
         }
@@ -411,20 +424,14 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
             public void onItemClick(AdapterView<?> arg0, View arg1, int arg2, long arg3) {
                 if (arg2 == 0) {
                     setHome();
-                    mTracker.send(new HitBuilders.EventBuilder()
-                            .setCategory("Action")
-                            .setAction("SetPosition_after_Longpress")
-                            .build());
+                    mFirebaseAnalytics.logEvent("SetPosition_after_Longpress", null);
                     list.setVisibility(View.INVISIBLE);
                     listVisible = false;
                     longPressMarker.remove();
                     positionUpdate();
                 } else {
                     fingerDestination(longpressLocation);
-                    mTracker.send(new HitBuilders.EventBuilder()
-                            .setCategory("Action")
-                            .setAction("SetDestination_after_Longpress")
-                            .build());
+                    mFirebaseAnalytics.logEvent("SetDestination_after_Longpress", null);
                     list.setVisibility(View.INVISIBLE);
                     listVisible = false;
                     longPressMarker.remove();
@@ -469,20 +476,13 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
                         mCore.disableAutocorrect();
                     mLocationer.stopAutocorrect();
                 } else if (msg.what == 9) {
-                    //Reactivate sensors regularly because app is in background mode
-                    //and other apps might cause sensors to stop
-                    Handler handler = new Handler();
-                    handler.postDelayed(new Runnable() {
-                        public void run() {
-                            if (mCore != null)
-                                mCore.reactivateSensors();
-                            listHandler.sendEmptyMessageDelayed(9, 5000);
-                        }
-                    }, 5000);
+                    //not used anymore
                 } else if (msg.what == 10) {
                     //BackgroundService is created, so dont stop sensors
                     if (mCore != null)
                         mCore.reactivateSensors();
+                    if (BuildConfig.DEBUG)
+                        Log.i("SmartNavi", "Reactivate Sensors because Background service is running.");
                 } else if (msg.what == 11) {
                     setFollowOn();
                     startLatLng = new LatLng(Core.startLat, Core.startLon);
@@ -510,7 +510,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
                 foreignIntent();
                 // start Autocorrect if user wants it
                 listHandler.sendEmptyMessage(6);
-                mProgressBar = (ProgressBar) findViewById(R.id.progressBar1);
+                mProgressBar = findViewById(R.id.progressBar1);
                 if (mProgressBar != null) {
                     mProgressBar.setVisibility(View.VISIBLE);
                 }
@@ -528,7 +528,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
                 break;
             case 12:
                 // message from Locationer
-                mProgressBar = (ProgressBar) findViewById(R.id.progressBar1);
+                mProgressBar = findViewById(R.id.progressBar1);
                 if (mProgressBar != null) {
                     mProgressBar.setVisibility(View.GONE);
                 }
@@ -552,17 +552,6 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         current_position_anim_ohne = map.addMarker(new MarkerOptions().position(northPoleHideout)
                 .icon(BitmapDescriptorFactory.fromResource(R.drawable.ic_maps_indicator_current_position_anim_ohne)).anchor(0.5f, 0.5f));
         current_position_anim_ohne.setVisible(false);
-    }
-
-    public boolean isOnline() {
-        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-
-        if (cm.getActiveNetworkInfo() != null && cm.getActiveNetworkInfo().isAvailable() && cm.getActiveNetworkInfo().isConnected()) {
-            return true;
-        } else {
-            Toast.makeText(this, getApplicationContext().getResources().getString(R.string.tx_47), Toast.LENGTH_LONG).show();
-            return false;
-        }
     }
 
     public void foreignIntent() {
@@ -644,11 +633,10 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
                 drawableDest = BitmapFactory.decodeResource(getResources(), R.drawable.finish2);
                 setDestPosition(destLatLng);
                 showRouteInfo();
-                new routeTask().execute("zielortSollRoutenTaskSelbstRausfinden");
+                new routeTask().execute();
             }
         } catch (Exception e) {
-            if (BuildConfig.debug)
-                e.printStackTrace();
+            e.printStackTrace();
         }
     }
 
@@ -757,7 +745,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
             if (viewLine != null) {
                 viewLine.setVisibility(View.VISIBLE);
             }
-            TextView mapText = (TextView) findViewById(R.id.mapText);
+            TextView mapText = findViewById(R.id.mapText);
             if (mapText != null) {
                 mapText.setVisibility(View.VISIBLE);
                 mapText.setText(getResources().getString(R.string.tx_06));
@@ -766,8 +754,10 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
             map.moveCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.fromLatLngZoom(startLatLng, 13.0F)));
         }
         followMe = true;
-        mCore = new Core(GoogleMap.this);
-        mCore.startSensors();
+        if (mCore == null) {
+            mCore = new Core(GoogleMap.this);
+            mCore.startSensors();
+        }
     }
 
     private List<LatLng> decodePoly(String encoded) {
@@ -810,7 +800,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
             segmentCounter++;
             Spanned marked_up = Html.fromHtml(html_instructions[segmentCounter]);
             String textString = marked_up.toString();
-            TextView mapText = (TextView) findViewById(R.id.mapText);
+            TextView mapText = findViewById(R.id.mapText);
             if (mapText != null) {
                 mapText.setText(textString);
             }
@@ -834,7 +824,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
             if (speechOutput) {
                 textString2 = textString2.replace("-", " ");
                 textString2 = textString2.replace("/", " ");
-                mTts.speak(textString2, TextToSpeech.QUEUE_FLUSH, null);
+                mTts.speak(textString2, TextToSpeech.QUEUE_FLUSH, null, null);
             }
             if (vibration) {
                 v.vibrate(300);
@@ -849,7 +839,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
     }
 
     public void showRouteInfo() {
-        TextView mapText = (TextView) findViewById(R.id.mapText);
+        TextView mapText = findViewById(R.id.mapText);
         View viewLine = findViewById(R.id.view156);
         if (mapText != null && viewLine != null) {
             mapText.setText(getApplicationContext().getResources().getString(R.string.tx_04));
@@ -859,17 +849,15 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
     }
 
     public void makeInfo(String endAddress, String firstDistance) {
-        TextView mapText = (TextView) findViewById(R.id.mapText);
+        TextView mapText = findViewById(R.id.mapText);
         View viewLine = findViewById(R.id.view156);
         if (firstDistance != null && mapText != null && viewLine != null) {
             mapText.setText(endAddress + "\n\n" + firstDistance);
             viewLine.setVisibility(View.VISIBLE);
             mapText.setVisibility(View.VISIBLE);
             if (speechOutput) {
-                firstDistance = firstDistance.replace("-", " ");
-                firstDistance = firstDistance.replace("\n", " ");
-                firstDistance = firstDistance.replace("/", " ");
-                mTts.speak(firstDistance, TextToSpeech.QUEUE_FLUSH, null);
+                firstDistance = firstDistance.replace("-", " ").replace("\n", " ").replace("/", " ");
+                mTts.speak(firstDistance, TextToSpeech.QUEUE_FLUSH, null, null);
             }
             Handler handler = new Handler();
             handler.postDelayed(new Runnable() {
@@ -893,9 +881,6 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
     protected void onResume() {
         GoogleApiAvailability api = GoogleApiAvailability.getInstance();
         int status = api.isGooglePlayServicesAvailable(this);
-
-        mTracker.setScreenName("GoogleMap");
-        mTracker.send(new HitBuilders.ScreenViewBuilder().build());
 
         if (status != ConnectionResult.SUCCESS) {
             new changeSettings("MapSource", "MapQuestOSM").execute();
@@ -950,7 +935,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         if (mLocationer != null) {
             mLocationer.deactivateLocationer();
         }
-        ProgressBar mProgressBar = (ProgressBar) findViewById(R.id.progressBar1);
+        ProgressBar mProgressBar = findViewById(R.id.progressBar1);
         if (mProgressBar != null) {
             mProgressBar.setVisibility(View.GONE);
         }
@@ -980,9 +965,13 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
             if (mCore != null) {
                 mCore.shutdown(this);
             }
-            if (mTts != null) {
-                mTts.stop();
-                mTts.shutdown();
+            try {
+                if (mTts != null) {
+                    mTts.stop();
+                    mTts.shutdown();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
             try {
                 mLocationer.stopAutocorrect();
@@ -997,9 +986,6 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.options_menu, menu);
         mainMenu = menu;
-        MenuItem searchItem = menu.findItem(R.id.menu_search);
-        searchView = (SearchView) searchItem.getActionView();
-        prepareSearchView();
         return true;
     }
 
@@ -1007,7 +993,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
     public boolean onKeyUp(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_MENU) {
             // if off, longPressMenu will be made invisible
-            list = (ListView) findViewById(R.id.liste);
+            list = findViewById(R.id.liste);
             if (list != null) {
                 list.setVisibility(View.INVISIBLE);
             }
@@ -1019,7 +1005,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         // if off, longPressMenu will be made invisible
-        list = (ListView) findViewById(R.id.liste);
+        list = findViewById(R.id.liste);
         if (list != null) {
             list.setVisibility(View.INVISIBLE);
         }
@@ -1037,18 +1023,6 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
                 startActivity(new Intent(this, Settings.class));
                 return true;
             case R.id.menu_offlinemaps:
-                /*
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
-                    String url = "http://smartnavi-app.com/offline/";
-                    Intent chromeTabIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                    final String EXTRA_CUSTOM_TABS_SESSION = "android.support.customtabs.extra.SESSION";
-                    Bundle extras = new Bundle();
-                    extras.putBinder(EXTRA_CUSTOM_TABS_SESSION, null );
-                    chromeTabIntent.putExtras(extras);
-                    final String EXTRA_CUSTOM_TABS_TOOLBAR_COLOR = "android.support.customtabs.extra.TOOLBAR_COLOR";
-                    chromeTabIntent.putExtra(EXTRA_CUSTOM_TABS_TOOLBAR_COLOR, Color.BLACK);
-                    startActivity(chromeTabIntent);
-                }else{}*/
                 startActivity(new Intent(GoogleMap.this, Webview.class));
                 return true;
             case R.id.menu_tutorial:
@@ -1067,11 +1041,68 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
             case android.R.id.home:
                 finish();
                 return (true);
+            case R.id.menu_search:
+                autoCompleteSearch();
             default:
                 return super.onOptionsItemSelected(item);
         }
     }
 
+    private void autoCompleteSearch() {
+        //Initialize Places API
+        if (!Places.isInitialized()) {
+            Places.initialize(getApplicationContext(), Config.PLACES_SDK_API_KEY);
+        }
+        // Set the fields to specify which types of place data to return.
+        List<Place.Field> fields = Arrays.asList(Place.Field.LAT_LNG, Place.Field.NAME);
+        //Define Reactangular Search Box for 3km
+        double lowerLeftLatitude;
+        double lowerLeftLongitude;
+        double upperRightLatitude;
+        double upperRightLongitude;
+        if (Core.startLat > 0) {
+            lowerLeftLatitude = Core.startLat - 0.03;
+            upperRightLatitude = Core.startLat + 0.03;
+        } else {
+            lowerLeftLatitude = Core.startLat + 0.03;
+            upperRightLatitude = Core.startLat - 0.03;
+        }
+        if (Core.startLon > 0) {
+            lowerLeftLongitude = Core.startLon + 0.04;
+            upperRightLongitude = Core.startLon - 0.04;
+        } else {
+            lowerLeftLongitude = Core.startLon - 0.04;
+            upperRightLongitude = Core.startLon + 0.04;
+        }
+        //SoutWest , NothEast
+        RectangularBounds bounds = RectangularBounds.newInstance(
+                new LatLng(lowerLeftLatitude, lowerLeftLongitude),
+                new LatLng(upperRightLatitude, upperRightLongitude));
+        Log.i("AutoComplete Bounds", "SouthWest: " + bounds.getSouthwest().latitude + " " + bounds.getSouthwest().longitude + "  " + " NorthEast: " + bounds.getNortheast().latitude + " " + bounds.getNortheast().longitude);
+        // Start the autocomplete intent.
+        Intent intent = new Autocomplete.IntentBuilder(
+                AutocompleteActivityMode.OVERLAY, fields).setLocationBias(bounds)
+                .build(this);
+
+        startActivityForResult(intent, 6767);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == 6767) {
+            if (resultCode == RESULT_OK) {
+                Place place = Autocomplete.getPlaceFromIntent(data);
+                Log.i("SmartNavi Autocomplete", "Place: " + place.getName() + ", " + place.getLatLng());
+                destLatLng = new LatLng(place.getLatLng().latitude, place.getLatLng().longitude);
+                setDestPosition(destLatLng);
+                new routeTask().execute();
+            } else if (resultCode == AutocompleteActivity.RESULT_ERROR) {
+                Status status = Autocomplete.getStatusFromIntent(data);
+                Log.i("SmartNavi Autocomplete", status.getStatusMessage());
+                Toast.makeText(this, getApplicationContext().getResources().getString(R.string.tx_103), Toast.LENGTH_LONG).show();
+            }
+        }
+    }
 
     public void fingerDestination(LatLng g) {
         destLat = g.latitude;// getLatitudeE6() / 1E6;
@@ -1083,7 +1114,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         setPosition(false);
         drawableDest = BitmapFactory.decodeResource(getResources(), R.drawable.finish2);
         setDestPosition(destLatLng);
-        new routeTask().execute("zielortSollRoutenTaskSelbstRausfinden"); //magic String :)
+        new routeTask().execute();
     }
 
     public void setDestPosition(LatLng z) {
@@ -1092,41 +1123,11 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
     }
 
     public void routeStartAnimation(LatLng northeast, LatLng southwest) {
-        mTracker.send(new HitBuilders.EventBuilder()
-                .setCategory("Action")
-                .setAction("RouteCreated_on_GoogleMap")
-                .build());
+        mFirebaseAnalytics.logEvent("Route_Created_Successfully", null);
         LatLngBounds grenzen = new LatLngBounds(southwest, northeast);
         map.animateCamera(CameraUpdateFactory.newLatLngBounds(grenzen, 100));
         listHandler.sendEmptyMessageDelayed(11, 3000);
     }
-
-
-  /*  private void showLongPressDialog() {
-        try {
-            actualMarker[0].setVisible(false);
-        } catch (Exception e) {
-            if (BuildConfig.debug)
-                e.printStackTrace();
-        }
-        final View longPressDialog = findViewById(R.id.longpPressDialog);
-        longPressDialog.setVisibility(View.VISIBLE);
-
-        Button longPressButton = (Button) findViewById(R.id.longPressButton);
-        longPressButton.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                longPressDialog.setVisibility(View.GONE);
-                try {
-                    actualMarker[0].setVisible(true);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        });
-    }
-    */
-
 
     private void appRateDialog() {
         SharedPreferences prefs = getSharedPreferences(getPackageName() + "_preferences", 0);
@@ -1157,6 +1158,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
                 try {
                     map.getUiSettings().setAllGesturesEnabled(false);
                 } catch (Exception e) {
+                    e.printStackTrace();
                 }
                 ratingFragment = new RatingFragment();
                 fragmentTransaction.add(R.id.googlemap_actvity_layout, ratingFragment).commitAllowingStateLoss();
@@ -1173,18 +1175,14 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
     public void abortGPS(final View view) {
         // Abort GPS was pressed (ProgressBar was pressed)
         try {
-            mTracker.send(new HitBuilders.EventBuilder()
-                    .setCategory("Action")
-                    .setAction("GPS_canceled_GoogleMap")
-                    .build());
+            mFirebaseAnalytics.logEvent("User_Canceled_GPS", null);
             mLocationer.deactivateLocationer();
-            ProgressBar mProgressBar = (ProgressBar) findViewById(R.id.progressBar1);
+            ProgressBar mProgressBar = findViewById(R.id.progressBar1);
             if (mProgressBar != null) {
                 mProgressBar.setVisibility(View.GONE);
             }
         } catch (Exception e) {
-            if (BuildConfig.debug)
-                e.printStackTrace();
+            e.printStackTrace();
         }
         Toast.makeText(this, getResources().getString(R.string.tx_82), Toast.LENGTH_SHORT).show();
     }
@@ -1196,21 +1194,16 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
             dialogGPS.setTitle(getApplicationContext().getResources().getString(R.string.tx_44));
             dialogGPS.setCanceledOnTouchOutside(false);
             dialogGPS.show();
-            mTracker.setScreenName("Dialog-GPS-enable");
-            mTracker.send(new HitBuilders.ScreenViewBuilder().build());
-
-            Button cancel = (Button) dialogGPS.findViewById(R.id.dialogCancelgps);
+            mFirebaseAnalytics.logEvent("GPS_Dialog_shown", null);
+            Button cancel = dialogGPS.findViewById(R.id.dialogCancelgps);
             cancel.setOnClickListener(new OnClickListener() {
                 public void onClick(View arg0) {
-                    mTracker.send(new HitBuilders.EventBuilder()
-                            .setCategory("Action")
-                            .setAction("GPS_dialog_canceled_GoogleMap")
-                            .build());
+                    mFirebaseAnalytics.logEvent("GPS_Dialog_canceled", null);
                     dialogGPS.dismiss();
                 }
             });
 
-            Button settingsGPS = (Button) dialogGPS.findViewById(R.id.dialogSettingsgps);
+            Button settingsGPS = dialogGPS.findViewById(R.id.dialogSettingsgps);
             settingsGPS.setOnClickListener(new OnClickListener() {
                 public void onClick(View arg0) {
                     try {
@@ -1220,155 +1213,12 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
                         startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS));
                         userSwitchedGps = true;
                     }
-                    mTracker.send(new HitBuilders.EventBuilder()
-                            .setCategory("Action")
-                            .setAction("GPS_dialog_jumpToSettings_GoogleMap")
-                            .build());
+                    mFirebaseAnalytics.logEvent("GPS_Dialog_JumpToSettings", null);
                     dialogGPS.dismiss();
                 }
             });
         }
     }
-
-
-    @SuppressLint("HandlerLeak")
-    private void prepareSearchView() {
-        searchView.setSuggestionsAdapter(mSuggestionsAdapter);
-
-        // onClick closes the longPressMenu if it is shown
-        searchView.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                // if off, longPressMenu will be made invisible
-                list = (ListView) findViewById(R.id.liste);
-                if (list != null) {
-                    list.setVisibility(View.INVISIBLE);
-                }
-            }
-        });
-
-        // autocomplete suggestions
-        searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
-
-            @Override
-            public boolean onQueryTextSubmit(String query) {
-
-                // close virtual keyboard
-                InputMethodManager inputManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-                try {
-                    inputManager.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), InputMethodManager.HIDE_NOT_ALWAYS);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-                // display query as hint
-                searchView.setQueryHint(query);
-                searchView.setQuery(query, false);
-                searchView.clearFocus();
-                // close search input field after 10 sec
-                searchView.clearFocus();
-                Handler handler = new Handler();
-                handler.postDelayed(new Runnable() {
-                    public void run() {
-                        mainMenu.getItem(0).collapseActionView();
-                    }
-                }, 10000);
-
-                // easter eggs
-                if (query.equalsIgnoreCase("Chuck Norris"))
-                    Toast.makeText(GoogleMap.this, "You can not find Chuck Norris. Chuck Norris finds YOU!", Toast.LENGTH_LONG).show();
-                else if (query.equalsIgnoreCase("cake") || query.equalsIgnoreCase("the cake") || query.equalsIgnoreCase("portal")) {
-                    Toast.makeText(GoogleMap.this, "The cake is a lie!", Toast.LENGTH_LONG).show();
-                } else if (query.equalsIgnoreCase("gyrooff")) {
-                    mCore.gyroExists = false;
-                    mCore.reactivateSensors();
-                }
-                else if (query.equalsIgnoreCase("rateme")) {
-                    // show RatingFragment
-                    Log.i("Rating", "Showing Rating Fragment");
-                    FragmentManager fragmentManager = getSupportFragmentManager();
-                    FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
-                    map.getUiSettings().setAllGesturesEnabled(false);
-                    ratingFragment = new RatingFragment();
-                    fragmentTransaction.add(R.id.googlemap_actvity_layout, ratingFragment).commit();
-                } else if (query.equalsIgnoreCase("smartnavihelp")) {
-                    // User ID anzeigen
-                    SharedPreferences activity_settings = getSharedPreferences(getPackageName() + "_preferences", MODE_PRIVATE);
-                    uid = activity_settings.getString("uid", "0");
-                    View viewLine = findViewById(R.id.view156);
-                    TextView mapText = (TextView) findViewById(R.id.mapText);
-                    if (viewLine != null && mapText != null) {
-                        viewLine.setVisibility(View.VISIBLE);
-                        mapText.setVisibility(View.VISIBLE);
-                        mapText.setText("Random User ID: " + uid);
-                    }
-                }
-                // search coordinates for autocomplete result
-                else if (isOnline()) {
-                    if (Config.PLACES_API_UNDER_LIMIT) {
-                        new PlacesTextSeachAsync().execute(query);
-                    } else {
-                        new geocodeTask().execute(query);
-                    }
-                }
-                return true;
-            }
-
-            @Override
-            public boolean onQueryTextChange(String query) {
-
-                // min 3 chars before autocomplete
-                if (query.length() >= Config.PLACES_SEARCH_QUERY_CHARACTER_LIMIT) {
-                    // prevent hammering
-                    if (!suggestionsInProgress) {
-                        // get suggestions
-                        new PlacesAutoComplete().execute(query);
-                        suggestionsInProgress = true;
-                    }
-                } else {
-                    // clear suggestion list
-                    mSuggestionsAdapter = new SuggestionsAdapter(sbContext, new MatrixCursor(Config.COLUMNS));
-                    searchView.setSuggestionsAdapter(mSuggestionsAdapter);
-                    searchView.getSuggestionsAdapter().notifyDataSetChanged();
-                }
-                return true;
-            }
-        });
-
-        searchView.setOnSuggestionListener(new SearchView.OnSuggestionListener() {
-
-            @Override
-            public boolean onSuggestionSelect(int position) {
-                return false;
-            }
-
-            @Override
-            public boolean onSuggestionClick(int position) {
-                Cursor c = (Cursor) mSuggestionsAdapter.getItem(position);
-                String query = c.getString(c.getColumnIndex(SearchManager.SUGGEST_COLUMN_TEXT_1));
-
-                searchView.setQuery(query, true);
-
-                return true;
-            }
-
-        });
-
-        // remote update of suggestion adapter
-        changeSuggestionAdapter = new Handler() {
-
-            public void handleMessage(Message msg) {
-                if (msg.what == 0) {
-                    mSuggestionsAdapter = new SuggestionsAdapter(toolbar.getContext(), cursor);
-                    searchView.setSuggestionsAdapter(GoogleMap.mSuggestionsAdapter);
-                    // important to update suggestion list
-                    searchView.getSuggestionsAdapter().notifyDataSetChanged();
-                    suggestionsInProgress = false;
-                }
-                super.handleMessage(msg);
-            }
-        };
-    }
-
 
     @Override
     public void onConnectionSuspended(int i) {
@@ -1398,7 +1248,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
             if (viewLine != null) {
                 viewLine.setVisibility(View.INVISIBLE);
             }
-            TextView mapText = (TextView) findViewById(R.id.mapText);
+            TextView mapText = findViewById(R.id.mapText);
             if (mapText != null) {
                 mapText.setVisibility(View.INVISIBLE);
             }
@@ -1434,8 +1284,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         fragmentTransaction.remove(ratingFragment).commit();
     }
 
-
-    private class routeTask extends AsyncTask<String, Void, Void> {
+    private class routeTask extends AsyncTask<Void, Void, Void> {
 
         private String endAddress;
         private JSONArray stepsArray;
@@ -1444,19 +1293,22 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         private boolean getPathSuccess;
         private String firstDistance;
 
-        protected void getPath(LatLng src, LatLng dest) {
+
+        private void getPath(LatLng src, LatLng dest) {
             waitedAtStart = false;
             counterRouteComplexity = phases = segmentCounter = 0;
 
             HttpRequests httpJSON = new HttpRequests();
-            httpJSON.setURL("http://maps.googleapis.com/maps/api/directions/json");
+            httpJSON.setURL("https://maps.googleapis.com/maps/api/directions/json");
             httpJSON.setMethod("GET");
             httpJSON.addValue("origin", src.latitude + "," + src.longitude);
             httpJSON.addValue("destination", dest.latitude + "," + dest.longitude);
             httpJSON.addValue("sensor", "true");
+            httpJSON.addValue("key", Config.DIRECTIONS_API_KEY);
             httpJSON.addValue("mode", "walking");
             httpJSON.addValue("language", language);
             String response = httpJSON.doRequest();
+            Log.i("routeTask Response", response);
             try {
                 getPathSuccess = true;
                 JSONObject json = new JSONObject(response);
@@ -1477,18 +1329,8 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
                 JSONObject southwest = bounds.getJSONObject("southwest");
                 southwestLatLng = new LatLng(southwest.optDouble("lat"), southwest.optDouble("lng"));
 
-                // get Polyline for first Draw
-                // JSONObject overview =
-                // routesObject.getJSONObject("overview_polyline");
-                // fullPolyline = overview.getString("points");
+                endAddress = legsObject.getString("end_address");
 
-                // Destination set by longPress
-                // endAddress shall be estimated through the JSON
-                // if destination has been chosen by Search, then endAdress is already
-                // set with correct Location
-                if (endAddress.equalsIgnoreCase("zielortSollRoutenTaskSelbstRausfinden")) {
-                    endAddress = legsObject.getString("end_address");
-                }
                 String[] zielOrtArray;
                 zielOrtArray = endAddress.split(",", 3);
                 try {
@@ -1518,20 +1360,18 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
                 phases = stepsArray.length();
 
             } catch (Exception e) {
-                if (BuildConfig.debug)
-                    e.printStackTrace();
+                e.printStackTrace();
                 getPathSuccess = false;
             }
+
         }
 
         @Override
-        protected Void doInBackground(String... query) {
-            endAddress = query[0];
+        protected Void doInBackground(Void... void2) {
             try {
                 getPath(GoogleMap.startLatLng, GoogleMap.destLatLng);
             } catch (Exception e) {
-                if (BuildConfig.debug)
-                    e.printStackTrace();
+                e.printStackTrace();
             }
             return null;
         }
@@ -1579,150 +1419,10 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
                 }
 
             } catch (Exception e) {
-                if (BuildConfig.debug)
-                    e.printStackTrace();
+                e.printStackTrace();
             }
         }
 
-    }
-
-    private class PlacesTextSeachAsync extends AsyncTask<String, Void, JSONObject> {
-
-        private String query;
-
-        @Override
-        protected JSONObject doInBackground(String... input) {
-            query = input[0];
-            PlacesTextSearch textSearch = new PlacesTextSearch(getBaseContext());
-            return textSearch.getDestinationCoordinates(input[0]);
-        }
-
-        @Override
-        protected void onPostExecute(JSONObject destination) {
-            super.onPostExecute(destination);
-            // no results from api
-            if (destination == null) {
-                Toast.makeText(GoogleMap.this, getApplicationContext().getResources().getString(R.string.tx_77), Toast.LENGTH_LONG).show();
-            } else {
-                // set destination for the routing tasks
-                try {
-                    destLat = (Double) destination.get("lat");
-                    destLon = (Double) destination.get("lng");
-                    destLatLng = new LatLng(destLat, destLon);
-                    listHandler.removeCallbacksAndMessages(null);
-                    map.stopAnimation();
-                    setFollowOff();
-                    setPosition(false);
-                    setDestPosition(destLatLng);
-                    showRouteInfo();
-                    new routeTask().execute(query);
-                } catch (JSONException e) {
-                    if (BuildConfig.debug)
-                        e.printStackTrace();
-                }
-            }
-        }
-    }
-
-    private class geocodeTask extends AsyncTask<String, Void, String> {
-
-        private boolean geocodeSuccess = false;
-
-        @Override
-        protected String doInBackground(String... destination) {
-
-            final Geocoder gc = new Geocoder(GoogleMap.this);
-            try {
-                double lowerLeftLatitude;
-                double lowerLeftLongitude;
-                double upperRightLatitude;
-                double upperRightLongitude;
-                // start Geocode Search
-                // first try: 5km perimeter
-                // second try: over 100km perimeter
-                // very far results are still working (e.g. Moskow)
-                if (geoCodeTry == 0) {
-                    if (Core.startLat >= 0) {
-                        lowerLeftLatitude = Core.startLat - 0.05;
-                        upperRightLatitude = Core.startLat + 0.05;
-                    } else {
-                        lowerLeftLatitude = Core.startLat + 0.05;
-                        upperRightLatitude = Core.startLat - 0.05;
-                    }
-
-                    if (Core.startLon >= 0) {
-                        lowerLeftLongitude = Core.startLon - 0.07;
-                        upperRightLongitude = Core.startLon + 0.07;
-                    } else {
-                        lowerLeftLongitude = Core.startLon + 0.07;
-                        upperRightLongitude = Core.startLon - 0.07;
-                    }
-                } else {
-                    if (Core.startLat >= 0) {
-                        lowerLeftLatitude = Core.startLat - 0.77;
-                        upperRightLatitude = Core.startLat + 0.77;
-                    } else {
-                        lowerLeftLatitude = Core.startLat + 0.77;
-                        upperRightLatitude = Core.startLat - 0.77;
-                    }
-
-                    if (Core.startLon >= 0) {
-                        lowerLeftLongitude = Core.startLon - 0.5;
-                        upperRightLongitude = Core.startLon + 0.5;
-                    } else {
-                        lowerLeftLongitude = Core.startLon + 0.5;
-                        upperRightLongitude = Core.startLon - 0.5;
-                    }
-                }
-
-                List<Address> foundAdresses = gc.getFromLocationName(destination[0], 1, lowerLeftLatitude, lowerLeftLongitude, upperRightLatitude,
-                        upperRightLongitude);
-                for (int i = 0; i < foundAdresses.size(); ++i) {
-                    Address x = foundAdresses.get(i);
-                    destLat = x.getLatitude();
-                    destLon = x.getLongitude();
-                    geocodeSuccess = true;
-                }
-            } catch (Exception e) {
-                geocodeSuccess = false;
-                if (BuildConfig.debug)
-                    e.printStackTrace();
-            }
-            return destination[0];
-        }
-
-        @Override
-        protected void onPostExecute(String destination) {
-
-            if (geocodeSuccess) {
-                listHandler.removeCallbacksAndMessages(null);
-                map.stopAnimation();
-                followMe = false;
-                geoCodeTry = 0;
-                // destLat and destLon are already set in onDoInBackground
-                // at List<Address>...
-                destLatLng = new LatLng(destLat, destLon);
-                setPosition(false);
-                setDestPosition(destLatLng);
-                drawableDest = BitmapFactory.decodeResource(getResources(), R.drawable.finish2);
-                showRouteInfo();
-                new routeTask().execute("zielortSollRoutenTaskSelbstRausfinden");
-
-                Handler handler = new Handler();
-                handler.postDelayed(new Runnable() {
-                    public void run() {
-                        mainMenu.getItem(0).collapseActionView();
-                    }
-                }, 7000);
-            } else if (geoCodeTry < 1) {
-                new geocodeTask().execute(destination);
-                geoCodeTry++;
-            } else {
-                searchView.clearFocus();
-                Toast.makeText(GoogleMap.this, getApplicationContext().getResources().getString(R.string.tx_24), Toast.LENGTH_LONG).show();
-                geoCodeTry = 0;
-            }
-        }
     }
 
 

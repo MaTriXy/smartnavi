@@ -3,8 +3,7 @@ package com.ilm.sandwich.fragments;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
-import android.support.v4.app.Fragment;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -19,14 +18,17 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.google.android.gms.analytics.HitBuilders;
-import com.google.android.gms.analytics.Tracker;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
+
+import com.google.firebase.analytics.FirebaseAnalytics;
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig;
 import com.ilm.sandwich.BuildConfig;
 import com.ilm.sandwich.R;
 import com.ilm.sandwich.sensors.Core;
-import com.ilm.sandwich.tools.AnalyticsApplication;
 
 import java.text.DecimalFormat;
+import java.util.Locale;
 
 /**
  * Fragment to show TutorialFragment for first app start or if requested by user.
@@ -39,7 +41,7 @@ public class TutorialFragment extends Fragment {
     private View welcomeView;
     private boolean metricUnits = true;
     private View fragmentView;
-    private Tracker mTracker;
+    private FirebaseAnalytics mFirebaseAnalytics;
 
     public TutorialFragment() {
     }
@@ -48,16 +50,12 @@ public class TutorialFragment extends Fragment {
     public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
         fragmentView = view;
-        SharedPreferences settings = this.getActivity().getSharedPreferences(this.getActivity().getPackageName() + "_preferences", Context.MODE_PRIVATE);
-        boolean trackingAllowed = settings.getBoolean("nutzdaten", true);
 
-        // Obtain the shared Tracker instance.
-        AnalyticsApplication application = (AnalyticsApplication) this.getActivity().getApplication();
-        mTracker = application.getDefaultTracker();
-        mTracker.setScreenName("TutorialFragment");
-        mTracker.send(new HitBuilders.ScreenViewBuilder().build());
+        // Obtain the FirebaseAnalytics instance.
+        mFirebaseAnalytics = FirebaseAnalytics.getInstance(view.getContext());
+        mFirebaseAnalytics.logEvent("Tutorial_Start", null);
 
-        startTutorial();
+        startTutorial(view);
     }
 
     @Override
@@ -89,27 +87,39 @@ public class TutorialFragment extends Fragment {
         mListener = null;
     }
 
-    public void startTutorial() {
-        welcomeView = fragmentView.findViewById(R.id.welcomeView);
-        welcomeView.setVisibility(View.VISIBLE);
+    private void startTutorial(View view) {
+        //Remote Config for AB Testing for Tutorial Wording
+        FirebaseRemoteConfig mFirebaseRemoteConfig = FirebaseRemoteConfig.getInstance();
+        boolean showTutorialPage1 = mFirebaseRemoteConfig.getBoolean("tutorial_page1_shown");
+        Log.i("Tutorial AB Test", "showTutorialPage1 = " + showTutorialPage1);
+        if (showTutorialPage1) {
+            //AB TEst about hiding the first page, proceed normally and show page 1
+            welcomeView = view.findViewById(R.id.welcomeView);
+            welcomeView.setVisibility(View.VISIBLE);
 
-        Button welcomeButton = (Button) fragmentView.findViewById(R.id.welcomeButton);
-        welcomeButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                mTracker.send(new HitBuilders.EventBuilder()
-                        .setCategory("Action")
-                        .setAction("Welcome_Button_pressed")
-                        .build());
-                welcomeView.setVisibility(View.INVISIBLE);
-                tutorialOverlay = fragmentView.findViewById(R.id.tutorialOverlay);
-                tutorialOverlay.setVisibility(View.VISIBLE);
-            }
-        });
+            mFirebaseAnalytics.logEvent(FirebaseAnalytics.Event.TUTORIAL_BEGIN, null);
+
+            Button welcomeButton = view.findViewById(R.id.welcomeButton);
+            welcomeButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    mFirebaseAnalytics.logEvent("Tutorial_Button1_pressed", null);
+                    welcomeView.setVisibility(View.INVISIBLE);
+                    tutorialOverlay = fragmentView.findViewById(R.id.tutorialOverlay);
+                    tutorialOverlay.setVisibility(View.VISIBLE);
+                }
+            });
+
+        } else {
+            //AB TEst with hiding the first page, just show page 2
+            tutorialOverlay = fragmentView.findViewById(R.id.tutorialOverlay);
+            tutorialOverlay.setVisibility(View.VISIBLE);
+        }
+
 
         SharedPreferences settings = this.getActivity().getSharedPreferences(this.getActivity().getPackageName() + "_preferences", Context.MODE_PRIVATE);
         String stepLengthString = settings.getString("step_length", null);
-        Spinner spinner = (Spinner) fragmentView.findViewById(R.id.tutorialSpinner);
+        Spinner spinner = view.findViewById(R.id.tutorialSpinner);
         // Create an ArrayAdapter using the string array and a default spinner layout
         ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(this.getActivity(), R.array.dimension, android.R.layout.simple_spinner_item);
         // Specify the layout to use when the list of choices appears
@@ -118,80 +128,94 @@ public class TutorialFragment extends Fragment {
         spinner.setAdapter(adapter);
         if (stepLengthString != null) {
             try {
-                stepLengthString = stepLengthString.replace(",", ".");
-                int savedBodyHeight = Integer.parseInt(stepLengthString);
-                if (savedBodyHeight < 241 && savedBodyHeight > 119) {
-                    EditText editText = (EditText) fragmentView.findViewById(R.id.tutorialEditText);
-                    editText.setText(savedBodyHeight);
-                    spinner.setSelection(0);
-                } else if (savedBodyHeight < 95 && savedBodyHeight > 45) {
-                    EditText editText = (EditText) fragmentView.findViewById(R.id.tutorialEditText);
-                    editText.setText(savedBodyHeight);
+                if (stepLengthString.contains("'")) {
+                    EditText editText = view.findViewById(R.id.tutorialEditText);
+                    editText.setText(stepLengthString, TextView.BufferType.EDITABLE);
                     spinner.setSelection(1);
+                } else {
+                    stepLengthString = stepLengthString.replace(",", ".");
+                    int savedBodyHeight = Integer.parseInt(stepLengthString);
+                    String savedBodyHeightString = "" + savedBodyHeight;
+                    EditText editText = view.findViewById(R.id.tutorialEditText);
+                    editText.setText(savedBodyHeightString, TextView.BufferType.EDITABLE);
+                    spinner.setSelection(0);
                 }
             } catch (Exception e) {
                 if (BuildConfig.debug)
                     e.printStackTrace();
             }
+        } else {
+            //For US users switch to foot inch bodyheight
+            Log.i("Language", "" + Locale.getDefault().getISO3Country());
+            if (Locale.getDefault().getISO3Country().contains("USA")) {
+                spinner.setSelection(1, false);
+                metricUnits = false;
+            }
         }
         spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-
             @Override
             public void onItemSelected(AdapterView<?> arg0, View arg1, int arg2, long arg3) {
-                if (arg2 == 0) {
-                    metricUnits = true;
-                } else {
-                    metricUnits = false;
-                }
+                if (arg2 == 0) metricUnits = true;
+                else metricUnits = false;
             }
-
             @Override
             public void onNothingSelected(AdapterView<?> arg0) {
-
             }
         });
 
-        Button startButton = (Button) fragmentView.findViewById(R.id.startbutton);
+        Button startButton = view.findViewById(R.id.startbutton);
         startButton.setOnClickListener(new View.OnClickListener() {
 
             @Override
             public void onClick(View v) {
 
-                mTracker.send(new HitBuilders.EventBuilder()
-                        .setCategory("Action")
-                        .setAction("Tutorial_Start_Button_pressed")
-                        .build());
 
+                mFirebaseAnalytics.logEvent("Tutorial_Button2_pressed", null);
                 boolean tutorialDone = false;
-                final EditText heightField = (EditText) fragmentView.findViewById(R.id.tutorialEditText);
+                final EditText heightField = fragmentView.findViewById(R.id.tutorialEditText);
                 int op = heightField.length();
                 float number;
                 if (op != 0) {
-                    try {
-                        number = Float.valueOf(heightField.getText().toString());
-                        if (number < 241 && number > 119 && metricUnits) {
-                            String numberString = df0.format(number);
-                            fragmentView.getContext().getSharedPreferences(fragmentView.getContext().getPackageName() + "_preferences", Context.MODE_PRIVATE).edit().putString("step_length", numberString).commit();
-                            Core.stepLength = (number / 222);
-                            tutorialDone = true;
-                        } else if (number < 95 && number > 45 && !metricUnits) {
-                            String numberString = df0.format(number);
-                            fragmentView.getContext().getSharedPreferences(TutorialFragment.this.getActivity().getPackageName() + "_preferences", Context.MODE_PRIVATE).edit().putString("step_length", numberString).apply();
-                            Core.stepLength = (float) (number * 2.54 / 222);
-                            tutorialDone = true;
-                        } else {
-                            Toast.makeText(fragmentView.getContext(), fragmentView.getContext().getResources().getString(R.string.tx_10), Toast.LENGTH_LONG).show();
+                    if (metricUnits) {
+                        try {
+                            number = Float.valueOf(heightField.getText().toString());
+                            if (number < 241 && number > 49) {
+                                String numberString = df0.format(number);
+                                fragmentView.getContext().getSharedPreferences(fragmentView.getContext().getPackageName() + "_preferences", Context.MODE_PRIVATE).edit().putString("step_length", numberString).commit();
+                                Core.stepLength = (number / 222);
+                                tutorialDone = true;
+                            } else {
+                                Toast.makeText(fragmentView.getContext(), fragmentView.getContext().getResources().getString(R.string.tx_10), Toast.LENGTH_LONG).show();
+                            }
+                        } catch (NumberFormatException e) {
+                            if (BuildConfig.debug)
+                                Toast.makeText(fragmentView.getContext(), fragmentView.getContext().getResources().getString(R.string.tx_32), Toast.LENGTH_LONG).show();
                         }
-                    } catch (NumberFormatException e) {
-                        if (BuildConfig.debug)
-                            Toast.makeText(fragmentView.getContext(), fragmentView.getContext().getResources().getString(R.string.tx_32), Toast.LENGTH_LONG).show();
+                    } else {
+                        try {
+                            String numberString = heightField.getText().toString();
+                            fragmentView.getContext().getSharedPreferences(TutorialFragment.this.getActivity().getPackageName() + "_preferences", Context.MODE_PRIVATE).edit().putString("step_length", numberString).apply();
+                            String[] feetInchString = numberString.split("'");
+                            String feetString = feetInchString[0];
+                            String inchString = feetInchString[1];
+                            float feet = Float.valueOf(feetString);
+                            float inch = Float.valueOf(inchString);
+                            float totalInch = 12 * feet + inch;
+                            Core.stepLength = (float) (totalInch * 2.54 / 222);
+                            tutorialDone = true;
+                        } catch (NumberFormatException e) {
+                            if (BuildConfig.debug)
+                                Toast.makeText(fragmentView.getContext(), fragmentView.getContext().getResources().getString(R.string.tx_32), Toast.LENGTH_LONG).show();
+                        }
                     }
+                    if (BuildConfig.DEBUG) Log.i("Step length", "Step length = " + Core.stepLength);
                 } else {
                     Toast.makeText(fragmentView.getContext(), fragmentView.getContext().getResources().getString(R.string.tx_10), Toast.LENGTH_LONG).show();
                 }
 
                 if (tutorialDone) {
                     // TutorialFragment finished
+                    mFirebaseAnalytics.logEvent(FirebaseAnalytics.Event.TUTORIAL_COMPLETE, null);
                     if (mListener != null) {
                         mListener.onTutorialFinished();
                     }
@@ -199,10 +223,11 @@ public class TutorialFragment extends Fragment {
             }
         });
 
-        EditText bodyHeightField = (EditText) fragmentView.findViewById(R.id.tutorialEditText);
+        final EditText bodyHeightField = view.findViewById(R.id.tutorialEditText);
         bodyHeightField.setOnEditorActionListener(new TextView.OnEditorActionListener() {
             @Override
             public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
+                EditText bodyHeightField = fragmentView.findViewById(R.id.tutorialEditText);
                 if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_SEND || actionId == EditorInfo.IME_ACTION_NEXT) {
                     try {
                         InputMethodManager inputManager = (InputMethodManager) fragmentView.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
@@ -211,7 +236,7 @@ public class TutorialFragment extends Fragment {
                         } catch (Exception e) {
                             e.printStackTrace();
                         }
-                        EditText bodyHeightField = (EditText) fragmentView.findViewById(R.id.tutorialEditText); //Workaround Coursor out off textfield
+                        //Workaround Coursor out off textfield
                         bodyHeightField.setFocusable(false);
                         bodyHeightField.setFocusableInTouchMode(true);
                         bodyHeightField.setFocusable(true);
@@ -223,6 +248,52 @@ public class TutorialFragment extends Fragment {
                 return false;
             }
         });
+
+        bodyHeightField.setOnKeyListener(new View.OnKeyListener() {
+            @Override
+            public boolean onKey(View v, int keyCode, KeyEvent event) {
+                if (!metricUnits) {
+                    if (event.getKeyCode() != KeyEvent.KEYCODE_DEL) {
+                        String input = bodyHeightField.getText().toString();
+                        if (input.length() == 1) {
+                            input = input + "'";
+                            bodyHeightField.setText(input);
+                            int pos = bodyHeightField.getText().length();
+                            bodyHeightField.setSelection(pos);
+                        }
+                    }
+                }
+                return false;
+            }
+        });
+
+        //If remoteConfig String is NOT EMPTY, then use it.
+        //Page1
+        if (!mFirebaseRemoteConfig.getString("step1_text1").equalsIgnoreCase("")) {
+            TextView s1t1 = view.findViewById(R.id.welcomeNumber1Text);
+            s1t1.setText(mFirebaseRemoteConfig.getString("step1_text1"));
+        }
+        if (!mFirebaseRemoteConfig.getString("step1_text2").equalsIgnoreCase("")) {
+            TextView s1t1 = view.findViewById(R.id.welcomeNumber2TextBarText);
+            s1t1.setText(mFirebaseRemoteConfig.getString("step1_text2"));
+        }
+        if (!mFirebaseRemoteConfig.getString("step1_text3").equalsIgnoreCase("")) {
+            TextView s1t1 = view.findViewById(R.id.welcomeNumber4Text);
+            s1t1.setText(mFirebaseRemoteConfig.getString("step1_text3"));
+        }
+        //Page 2
+        if (!mFirebaseRemoteConfig.getString("step2_text1").equalsIgnoreCase("")) {
+            TextView s1t1 = view.findViewById(R.id.tutorialNumber1Text);
+            s1t1.setText(mFirebaseRemoteConfig.getString("step2_text1"));
+        }
+        if (!mFirebaseRemoteConfig.getString("step2_text2").equalsIgnoreCase("")) {
+            TextView s1t1 = view.findViewById(R.id.tutorialNumber2TextBarText);
+            s1t1.setText(mFirebaseRemoteConfig.getString("step2_text2"));
+        }
+        if (!mFirebaseRemoteConfig.getString("step2_text3").equalsIgnoreCase("")) {
+            TextView s1t1 = view.findViewById(R.id.tutorialNumber4Text);
+            s1t1.setText(mFirebaseRemoteConfig.getString("step2_text3"));
+        }
     }
 
     public interface onTutorialFinishedListener {

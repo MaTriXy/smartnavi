@@ -99,7 +99,7 @@ public class Core implements SensorEventListener {
     private int autoCorrectFactor = 1;
     private int magnUnits;
     private int aclUnits;
-    private boolean autoCorrect = false;
+    private boolean autoCorrect;
     private SharedPreferences settings;
     private onStepUpdateListener stepUpdateListener;
 
@@ -271,6 +271,7 @@ public class Core implements SensorEventListener {
         magnUnits = 0;
         startTime = System.nanoTime();
         try {
+            mSensorManager.unregisterListener(Core.this);
             mSensorManager.registerListener(Core.this, mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_GAME);
             mSensorManager.registerListener(Core.this, mSensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD), SensorManager.SENSOR_DELAY_GAME);
             if (BuildConfig.debug)
@@ -290,7 +291,7 @@ public class Core implements SensorEventListener {
             mSensorManager.registerListener(Core.this, mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), 1);
             mSensorManager.registerListener(Core.this, mSensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD), 1);
             if (BuildConfig.debug)
-                Log.i("Sensors", "Sensors activated!");
+                Log.i("Sensors", "Sensors reactivated!");
             if (gyroExists) {
                 //use gyroscope with impovedOrientationProvider
                 mOrientationProvider.start();
@@ -665,7 +666,7 @@ public class Core implements SensorEventListener {
                     Core.origAcl = event.values.clone();
                 }
 
-                if (Config.backgroundServiceActive && units % 50 == 0) {
+                if (Config.backgroundServiceActive && units % 10 == 0) {
                     BackgroundService.newFakePosition();
                 }
 
@@ -691,7 +692,6 @@ public class Core implements SensorEventListener {
                 }
 
                 stepDetection();
-
                 // AutoCorrect (dependent on Factor, i.e. number of steps)
                 if (autoCorrect) {
                     if (!alreadyWaitingForAutoCorrect) {

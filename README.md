@@ -8,6 +8,8 @@ Step based and GPS independent pedestrian navigation for Android
 
 **See https://smartnavi-app.com for more information!**
 
+**Donations via Bitcoin are very much appreciated: 1MPPXgwnkBeYASVdh1BL3LyqCftZ4qmTPB**
+
 Features
 ==========
 * Step based navigation for pedestrians
@@ -21,7 +23,7 @@ Features
 Developed By
 ============
 
-* Christian Henke - <contact@smartnavi-app.com>
+* Christian Henke - <christian6767@gmail.com>
 
 Special thanks to: Markus Kniep & Michael Lückgen - You are awesome!
 Thanks to Alexanders Pacha for his improved OrientationSensor!
@@ -29,7 +31,7 @@ Thanks to Alexanders Pacha for his improved OrientationSensor!
 License
 =======
 
-    Copyright 2011 Christian Henke
+    Copyright 2019 Christian Henke
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
