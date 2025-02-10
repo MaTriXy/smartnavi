@@ -70,8 +70,6 @@ import com.google.android.libraries.places.widget.AutocompleteActivity;
 import com.google.android.libraries.places.widget.model.AutocompleteActivityMode;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.firebase.analytics.FirebaseAnalytics;
-import com.google.firebase.iid.FirebaseInstanceId;
-import com.google.firebase.iid.InstanceIdResult;
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig;
 import com.google.firebase.remoteconfig.FirebaseRemoteConfigSettings;
 import com.ilm.sandwich.fragments.RatingFragment;
@@ -93,7 +91,7 @@ import java.util.Locale;
  * MapActivitiy for Google Maps
  *
  * @author Christian Henke
- * www.smartnavi-app.com
+ * https://smartnavi.app
  */
 public class GoogleMap extends AppCompatActivity implements Locationer.onLocationUpdateListener,
         GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, OnMapReadyCallback, TutorialFragment.onTutorialFinishedListener, Core.onStepUpdateListener, RatingFragment.onRatingFinishedListener {
@@ -194,15 +192,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         // Obtain the FirebaseAnalytics instance.
         mFirebaseAnalytics = FirebaseAnalytics.getInstance(this);
         FirebaseRemoteConfig mFirebaseRemoteConfig = FirebaseRemoteConfig.getInstance();
-        if (BuildConfig.DEBUG) {
-            FirebaseInstanceId.getInstance().getInstanceId()
-                    .addOnCompleteListener(new OnCompleteListener<InstanceIdResult>() {
-                        @Override
-                        public void onComplete(@NonNull Task<InstanceIdResult> task) {
-                            Log.i("IID_TOKEN", task.getResult().getToken());
-                        }
-                    });
-        } else {
+        if (!BuildConfig.DEBUG) {
             mFirebaseRemoteConfig.fetch(1);
             mFirebaseRemoteConfig.activate();
         }
@@ -384,13 +374,20 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         String stepLengthString = settings.getString("step_length", null);
         if (stepLengthString != null) {
             try {
-
                 if (stepLengthString.contains("'")) {
                     String[] feetInchString = stepLengthString.split("'");
                     String feetString = feetInchString[0];
-                    String inchString = feetInchString[1];
                     float feet = Float.valueOf(feetString);
-                    float inch = Float.valueOf(inchString);
+
+                    //Check if user provided inch, if so set that. If not assume 0
+                    float inch = 0;
+                    if (feetInchString.length > 1) {
+                        String inchString = feetInchString[1];
+                        inch = Float.valueOf(inchString);
+                    } else {
+                        inch = 0;
+                    }
+
                     float totalInch = 12 * feet + inch;
                     Core.stepLength = (float) (totalInch * 2.54 / 222);
                 } else {
@@ -1060,20 +1057,13 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         double lowerLeftLongitude;
         double upperRightLatitude;
         double upperRightLongitude;
-        if (Core.startLat > 0) {
-            lowerLeftLatitude = Core.startLat - 0.03;
-            upperRightLatitude = Core.startLat + 0.03;
-        } else {
-            lowerLeftLatitude = Core.startLat + 0.03;
-            upperRightLatitude = Core.startLat - 0.03;
-        }
-        if (Core.startLon > 0) {
-            lowerLeftLongitude = Core.startLon + 0.04;
-            upperRightLongitude = Core.startLon - 0.04;
-        } else {
-            lowerLeftLongitude = Core.startLon - 0.04;
-            upperRightLongitude = Core.startLon + 0.04;
-        }
+
+        lowerLeftLatitude = Core.startLat - 0.03;
+        upperRightLatitude = Core.startLat + 0.03;
+
+        lowerLeftLongitude = Core.startLon - 0.04;
+        upperRightLongitude = Core.startLon + 0.04;
+
         //SoutWest , NothEast
         RectangularBounds bounds = RectangularBounds.newInstance(
                 new LatLng(lowerLeftLatitude, lowerLeftLongitude),
@@ -1087,6 +1077,7 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
         startActivityForResult(intent, 6767);
     }
 
+    @SuppressLint("MissingSuperCall")
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == 6767) {
@@ -1338,7 +1329,6 @@ public class GoogleMap extends AppCompatActivity implements Locationer.onLocatio
                     endAddress += "\n" + zielOrtArray[1];
                 } catch (Exception e) {
                     // thats possible if Destination Name is only 1 line
-                    if (BuildConfig.debug)
                         e.printStackTrace();
                 }
                 if (language.equalsIgnoreCase("de")) {

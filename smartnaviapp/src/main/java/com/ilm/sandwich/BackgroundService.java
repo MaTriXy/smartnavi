@@ -10,6 +10,7 @@ import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.MenuItem;
 import android.view.View;
@@ -28,7 +29,7 @@ import com.ilm.sandwich.tools.ForegroundService;
 
 /**
  * @author Christian Henke
- *         www.smartnavi-app.com
+ * https://smartnavi.app
  */
 public class BackgroundService extends AppCompatActivity {
 
@@ -51,7 +52,6 @@ public class BackgroundService extends AppCompatActivity {
         try {
             geoLocationManager.setTestProviderEnabled(mocLocationProvider, false);
             geoLocationManager.removeTestProvider(mocLocationProvider);
-            geoLocationManager.clearTestProviderEnabled(mocLocationProvider);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -77,14 +77,17 @@ public class BackgroundService extends AppCompatActivity {
         steps = Core.stepCounter;
         //GPS
         loc = new Location(mocLocationProvider);
-        loc.setAccuracy(12);
+        loc.setAccuracy(1);
         loc.setAltitude(Core.altitude);
         loc.setLatitude(Core.startLat);
         loc.setLongitude(Core.startLon);
         loc.setProvider(mocLocationProvider);
         loc.setSpeed(0.8f);
+        loc.setSpeedAccuracyMetersPerSecond(0.01f);
         loc.setBearing((float) Core.azimuth);
+        loc.setBearingAccuracyDegrees(1);
         loc.setTime(System.currentTimeMillis());
+        loc.setVerticalAccuracyMeters(1);
         try {
             try {
                 loc.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
@@ -128,27 +131,18 @@ public class BackgroundService extends AppCompatActivity {
             try {
                 geoLocationManager.setTestProviderEnabled(mocLocationProvider, false);
             } catch (Exception e2) {
-                if (BuildConfig.DEBUG)
-                    e.printStackTrace();
-            }
-            try {
-                geoLocationManager.clearTestProviderEnabled(mocLocationProvider);
-            } catch (Exception e3) {
-                if (BuildConfig.DEBUG)
-                    e.printStackTrace();
+                    e2.printStackTrace();
             }
             try {
                 geoLocationManager.removeTestProvider(mocLocationProvider);
             } catch (Exception e4) {
-                if (BuildConfig.DEBUG)
-                    e.printStackTrace();
+                e4.printStackTrace();
             }
             try {
                 notificationManager = NotificationManagerCompat.from(this);
                 notificationManager.cancelAll();
             } catch (Exception e5) {
-                if (BuildConfig.DEBUG)
-                    e.printStackTrace();
+                e5.printStackTrace();
             }
             finish();
         }
@@ -178,7 +172,7 @@ public class BackgroundService extends AppCompatActivity {
         try {
             mocLocationProvider = LocationManager.GPS_PROVIDER;
 
-            geoLocationManager.addTestProvider(mocLocationProvider, false, false, false, false, true, true, true, 1, 5);
+            geoLocationManager.addTestProvider(mocLocationProvider, false, false, false, false, true, true, true, 1, 1);
             geoLocationManager.setTestProviderEnabled(mocLocationProvider, true);
             geoLocationManager.setTestProviderStatus(mocLocationProvider, 2, null, System.currentTimeMillis());
 
@@ -231,44 +225,63 @@ public class BackgroundService extends AppCompatActivity {
             startActivity(startMain);
 
         } catch (SecurityException sece) {
-            mFirebaseAnalytics.logEvent("BackgroundService_Start_Error", null);
-            final Dialog dialog1 = new Dialog(BackgroundService.this);
-            dialog1.setContentView(R.layout.dialog1);
-            dialog1.setTitle(getApplicationContext().getResources().getString(R.string.tx_44));
-            dialog1.setCancelable(true);
-            dialog1.show();
+            int devSettingsEnabled = Settings.Secure.getInt(this.getContentResolver(),
+                    Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0);
+            if (devSettingsEnabled == 1) {
+                mFirebaseAnalytics.logEvent("BackgroundService_Start_Err_DevEnabled", null);
+                final Dialog dialog1 = new Dialog(BackgroundService.this);
+                dialog1.setContentView(R.layout.dialog1);
+                dialog1.setTitle(getApplicationContext().getResources().getString(R.string.tx_44));
+                dialog1.setCancelable(true);
+                dialog1.show();
 
-            Button cancel2 = dialog1.findViewById(R.id.dialogCancelMock);
-            cancel2.setOnClickListener(new OnClickListener() {
-                public void onClick(View arg0) {
-                    dialog1.dismiss();
-                }
-            });
+                Button cancel2 = dialog1.findViewById(R.id.dialogCancelMock);
+                cancel2.setOnClickListener(new OnClickListener() {
+                    public void onClick(View arg0) {
+                        dialog1.dismiss();
+                    }
+                });
 
-            Button settings2 = dialog1.findViewById(R.id.dialogSettingsMock);
-            settings2.setOnClickListener(new OnClickListener() {
-                public void onClick(View arg0) {
-                    try {
-                        startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
-                    } catch (android.content.ActivityNotFoundException ae) {
+                Button settings2 = dialog1.findViewById(R.id.dialogSettingsMock);
+                settings2.setOnClickListener(new OnClickListener() {
+                    public void onClick(View arg0) {
                         try {
-                            startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_SETTINGS));
-                        } catch (android.content.ActivityNotFoundException ae2) {
-                            try {
-                                startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS));
-                            } catch (android.content.ActivityNotFoundException e) {
-                                // e.printStackTrace();
-                            }
+                            startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
+                        } catch (android.content.ActivityNotFoundException ae) {
 
                         }
+                        dialog1.dismiss();
                     }
+                });
+            } else {
+                mFirebaseAnalytics.logEvent("BackgroundService_Start_Err_DevDisabled", null);
+                final Dialog dialog2 = new Dialog(BackgroundService.this);
+                dialog2.setContentView(R.layout.dialog2);
+                dialog2.setTitle(getApplicationContext().getResources().getString(R.string.tx_104));
+                dialog2.setCancelable(true);
+                dialog2.show();
 
-                    dialog1.dismiss();
-                }
-            });
+                Button cancel3 = dialog2.findViewById(R.id.dialogCancelDevSett);
+                cancel3.setOnClickListener(new OnClickListener() {
+                    public void onClick(View arg0) {
+                        dialog2.dismiss();
+                    }
+                });
+
+                Button settings3 = dialog2.findViewById(R.id.dialogSettingsDevSett);
+                settings3.setOnClickListener(new OnClickListener() {
+                    public void onClick(View arg0) {
+                        try {
+                            startActivity(new Intent(Settings.ACTION_DEVICE_INFO_SETTINGS));
+                        } catch (android.content.ActivityNotFoundException ae2) {
+
+                        }
+                        dialog2.dismiss();
+                    }
+                });
+            }
             serviceButton.setText(getApplicationContext().getResources().getString(R.string.tx_74));
         } catch (IllegalArgumentException e) {
-            if (BuildConfig.DEBUG)
                 e.printStackTrace();
         }
     }
@@ -288,25 +301,22 @@ public class BackgroundService extends AppCompatActivity {
         try {
             geoLocationManager.setTestProviderEnabled(mocLocationProvider, false);
         } catch (Exception e) {
-            if (BuildConfig.DEBUG)
                 e.printStackTrace();
         }
         try {
-            geoLocationManager.clearTestProviderEnabled(mocLocationProvider);
+            geoLocationManager.setTestProviderEnabled(mocLocationProvider, false);
         } catch (Exception e) {
-            if (BuildConfig.DEBUG)
                 e.printStackTrace();
         }
         try {
             geoLocationManager.removeTestProvider(mocLocationProvider);
         } catch (Exception e) {
-            if (BuildConfig.DEBUG)
                 e.printStackTrace();
         }
         try {
+            notificationManager = NotificationManagerCompat.from(this);
             notificationManager.cancelAll();
         } catch (Exception e) {
-            if (BuildConfig.DEBUG)
                 e.printStackTrace();
         }
 
@@ -316,9 +326,10 @@ public class BackgroundService extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
-
         if (!shouldStart) {
             stop();
+        } else {
+            finish();
         }
         super.onBackPressed();
     }
@@ -327,20 +338,12 @@ public class BackgroundService extends AppCompatActivity {
     public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == android.R.id.home) {
             if (!shouldStart) {
-                try {
-                    geoLocationManager.setTestProviderEnabled(mocLocationProvider, false);
-                    geoLocationManager.removeTestProvider(mocLocationProvider);
-                    geoLocationManager.clearTestProviderEnabled(mocLocationProvider);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-                notificationManager.cancelAll();
-                Toast.makeText(this, getApplicationContext().getResources().getString(R.string.tx_70), Toast.LENGTH_LONG).show();
+                stop();
+            } else {
+                finish();
             }
-            finish();
-            return (true);
         }
-        return super.onOptionsItemSelected(item);
+        return (true);
     }
 
 }
